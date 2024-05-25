@@ -1,0 +1,7 @@
+load STM32H743IITx 
+project name STCubeGenerated 
+project toolchain "MDK-ARM V5" 
+project path "E:\STM32_MDK\nand_fs\STM32CubeMX\" 
+set tpl_path "D:\keil5_ARM\Packs\Keil\STM32H7xx_DFP\3.1.1\MDK\CubeMX\SC" 
+set dest_path "E:\STM32_MDK\nand_fs" 
+SetCopyLibrary  "copy as reference"
