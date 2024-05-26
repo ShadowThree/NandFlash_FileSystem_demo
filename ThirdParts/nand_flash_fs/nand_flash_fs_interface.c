@@ -1,5 +1,4 @@
 #include "nand_flash_fs_interface.h"
-#include "rl_fs.h"
 #include "stdio.h"
 #include "cmsis_os2.h"
 
@@ -14,36 +13,37 @@
 #endif
 
 static void cmd_format(char *par);
+static void dot_format (uint64_t val, char *sp);
 
-void init_filesystem (void)
+void init_filesystem(uint8_t forceFormat)
 {
-  fsStatus stat;
-  /* Initialize and mount drive "M0" */
+	fsStatus stat;
   stat = finit ("N0:");
-  if (stat == fsOK) {
-    stat = fmount ("N0:");
-    if (stat == fsOK) {
-      FS_DBG("Drive N0 ready!\n");
-    }
-    else if (stat == fsNoFileSystem) {
-      /* Format the drive */
-      FS_ERR("Drive N0 not formatted!\n");
-      cmd_format("N0:");
-    }
-    else {
-      FS_ERR("Drive N0 mount failed with error code %d\n", stat);
-    }
-  }
-  else {
-    FS_ERR("Drive N0 initialization failed!\n");
-  }
+	if(stat != fsOK) {
+		FS_ERR("Drive N0 initialization failed!\n");
+		return;
+	}
+	
+	stat = fmount ("N0:");
+	if(forceFormat || stat == fsNoFileSystem) {
+		// format
+		FS_DBG("format NandFlash FS\n");
+		cmd_format("N0:");
+		if(fmount("N0:") != fsOK) {
+			FS_ERR("mount N0: failed\n");
+		}
+	} else if(stat != fsOK) {
+		FS_ERR("mount NandFlash err[%d]\n", stat);
+	} else {
+		FS_DBG("NandFlash FS ready\n");
+	}
 }
 
 size_t write_file(char* name, uint8_t* buf, size_t num)
 {
 	FILE* f;
 	
-	f = fopen(name, "w");
+	f = fopen(name, "a");
 	if(f == NULL) {
 		LOG_ERR("open \"%s\" err\n", name);
 		return 0;
@@ -92,6 +92,113 @@ size_t read_file(char* name, uint8_t* buf, size_t num)
 #endif
 	fclose(f);
 	return count;
+}
+
+/**
+ *	@brief	list all the items(file & dir) info of current path. (Shown in order of creation time)
+ */
+void show_dir(char *mask)
+{
+  int64_t  free;
+  uint64_t fsize;
+  uint32_t files,dirs,i;
+  char temp[32],ch;
+  fsFileInfo info;
+
+  FS_DBG("\n**** list [%s] ****\n", mask);
+  files = 0;
+  dirs  = 0;
+  fsize = 0;
+  info.fileID  = 0;
+  while (ffind (mask,&info) == fsOK) {
+    if (info.attrib & FS_FAT_ATTR_DIRECTORY) {
+      i = 0;
+      while (strlen((const char *)info.name+i) > 41) {
+        ch = info.name[i+41];
+        info.name[i+41] = 0;
+        FS_DBG("\n[%-41s]", &info.name[i]);
+        info.name[i+41] = ch;
+        i += 41;
+      }
+      FS_DBG ("DIR: \"%-41s\"", &info.name[i]);
+      FS_DBG ("  %04d.%02d.%02d %02d:%02d\n",
+               info.time.year, info.time.mon, info.time.day,
+               info.time.hr, info.time.min);
+      dirs++;
+    } else {
+      dot_format (info.size, &temp[0]);
+      i = 0;
+      while (strlen((const char *)info.name+i) > 41) {
+        ch = info.name[i+41];
+        info.name[i+41] = 0;
+        FS_DBG ("\n[%-41s]", &info.name[i]);
+        info.name[i+41] = ch;
+        i += 41;
+      }
+      FS_DBG ("%-41s %14s ", &info.name[i], temp);
+      FS_DBG ("  %04d.%02d.%02d %02d:%02d\n",
+               info.time.year, info.time.mon, info.time.day,
+               info.time.hr, info.time.min);
+      fsize += info.size;
+      files++;
+    }
+  }
+	
+  if (info.fileID == 0) {
+    FS_DBG ("No files...");
+  }
+  else {
+    dot_format (fsize, &temp[0]);
+    FS_DBG ("              %9d File(s)    %21s bytes", files, temp);
+  }
+	
+  free = ffree(mask);
+  if (free >= 0) {
+    dot_format ((uint64_t)free, &temp[0]);
+    if (dirs) {
+      FS_DBG ("\n              %9d Dir(s)     %21s bytes free.\n", dirs, temp);
+    }
+    else {
+      FS_DBG ("\n%56s bytes free.\n",temp);
+    }
+  }
+	FS_DBG("**** list [%s] over ****\n", mask);
+}
+
+/*-----------------------------------------------------------------------------
+ *        Print size in dotted format
+ *----------------------------------------------------------------------------*/
+static void dot_format (uint64_t val, char *sp) {
+
+  if (val >= (uint64_t)1e12) {
+    sp += sprintf (sp,"%d.",(uint32_t)(val/(uint64_t)1e12));
+    val %= (uint64_t)1e12;
+    sp += sprintf (sp,"%03d.",(uint32_t)(val/(uint64_t)1e9));
+    val %= (uint64_t)1e9;
+    sp += sprintf (sp,"%03d.",(uint32_t)(val/(uint64_t)1e6));
+    val %= (uint64_t)1e6;
+    sprintf (sp,"%03d.%03d",(uint32_t)(val/1000),(uint32_t)(val%1000));
+    return;
+  }
+  if (val >= (uint64_t)1e9) {
+    sp += sprintf (sp,"%d.",(uint32_t)(val/(uint64_t)1e9));
+    val %= (uint64_t)1e9;
+    sp += sprintf (sp,"%03d.",(uint32_t)(val/(uint64_t)1e6));
+    val %= (uint64_t)1e6;
+    sprintf (sp,"%03d.%03d",(uint32_t)(val/1000),(uint32_t)(val%1000));
+    return;
+  }
+  if (val >= (uint64_t)1e6) {
+    sp += sprintf (sp,"%d.",(uint32_t)(val/(uint64_t)1e6));
+    val %= (uint64_t)1e6;
+    sprintf (sp,"%03d.%03d",(uint32_t)(val/1000),(uint32_t)(val%1000));
+    return;
+  }
+  if (val >= 1000) {
+    sprintf (sp,"%d.%03d",(uint32_t)(val/1000),(uint32_t)(val%1000));
+    return;
+  }
+  sprintf (sp,"%d",(uint32_t)(val));
 }
 
 static char *get_drive (char *src, char *dst, uint32_t dst_sz) {

@@ -110,20 +110,34 @@ void MX_FREERTOS_Init(void) {
   * @param  argument: Not used
   * @retval None
   */
-#include "rl_fs.h"
 #include "dbger.h"
 #include "nand_flash_fs_interface.h"
 /* USER CODE END Header_StartDefaultTask */
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN StartDefaultTask */	
-	init_filesystem();
+	init_filesystem(0);
 	
-	char buf[256] = {0};
+	char buf[256] = {0};	
 	strcpy(buf, "This is a test string by shadow3d.\n\t\t\t-- 20240526 03:59:23 AM\n");
-	write_file("test.txt", (uint8_t*)buf, 128);
+	write_file("test.txt", (uint8_t*)buf, strlen(buf));
 	read_file("test.txt", (uint8_t*)buf, sizeof(buf));
-
+	//osDelay(100);
+	show_dir("");
+	show_dir("*");
+	fmkdir("DATA");
+	fchdir("DATA");
+	fmkdir("test_dir");
+	write_file("data.csv", (uint8_t*)buf, strlen(buf));
+	show_dir("*");
+	fchdir("..");		// fchdir(""); can NOT work
+	show_dir("*");
+	//osDelay(100);
+	show_dir("N0:*.txt");
+	
+	frmdir("DATA", "/S");
+	fdelete("test.txt", NULL);
+	show_dir("*");
   /* Infinite loop */
   for(;;)
   {
